@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc.Testing;
+using System.Text.Json;
 using Xunit;
 
 namespace Claims.Tests
@@ -6,20 +7,25 @@ namespace Claims.Tests
     public class ClaimsControllerTests
     {
         [Fact]
-        public async Task Get_Claims()
+        public async Task Get_Claims_ReturnsOkWithJsonArray()
         {
-            var application = new WebApplicationFactory<Program>()
-                .WithWebHostBuilder(_ =>
-                {});
+            var application = new WebApplicationFactory<Program>();
 
             var client = application.CreateClient();
 
-            var response = await client.GetAsync("/Claims");
+            Console.WriteLine(client.BaseAddress);
+
+            var response = await client.GetAsync("/claims/get");
 
             response.EnsureSuccessStatusCode();
 
-            //TODO: Apart from ensuring 200 OK being returned, what else can be asserted?
-        }
+            Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
 
+            var content = await response.Content.ReadAsStringAsync();
+
+            using var json = JsonDocument.Parse(content);
+
+            Assert.Equal(JsonValueKind.Array, json.RootElement.ValueKind);
+        }
     }
 }

@@ -1,98 +1,84 @@
-using Claims.Auditing;
+using Claims.Application.Dto;
+using Claims.Application.Services;
+using Claims.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
-namespace Claims.Controllers;
-
-[ApiController]
-[Route("[controller]")]
-public class CoversController : ControllerBase
+namespace Claims.Controllers
 {
-    private readonly ClaimsContext _claimsContext;
-    private readonly ILogger<CoversController> _logger;
-    private readonly Auditer _auditer;
-
-    public CoversController(ClaimsContext claimsContext, AuditContext auditContext, ILogger<CoversController> logger)
+    [ApiController]
+    [Route("[controller]")]
+    public class CoversController(ICoverService coverService) : ControllerBase
     {
-        _claimsContext = claimsContext;
-        _logger = logger;
-        _auditer = new Auditer(auditContext);
-    }
-
-    [HttpPost("compute")]
-    public async Task<ActionResult> ComputePremiumAsync(DateTime startDate, DateTime endDate, CoverType coverType)
-    {
-        return Ok(ComputePremium(startDate, endDate, coverType));
-    }
-
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<Cover>>> GetAsync()
-    {
-        var results = await _claimsContext.Covers.ToListAsync();
-        return Ok(results);
-    }
-
-    [HttpGet("{id}")]
-    public async Task<ActionResult<Cover>> GetAsync(string id)
-    {
-        var results = await _claimsContext.Covers.ToListAsync();
-        return Ok(results.SingleOrDefault(cover => cover.Id == id));
-    }
-
-    [HttpPost]
-    public async Task<ActionResult> CreateAsync(Cover cover)
-    {
-        cover.Id = Guid.NewGuid().ToString();
-        cover.Premium = ComputePremium(cover.StartDate, cover.EndDate, cover.Type);
-        _claimsContext.Covers.Add(cover);
-        await _claimsContext.SaveChangesAsync();
-        _auditer.AuditCover(cover.Id, "POST");
-        return Ok(cover);
-    }
-
-    [HttpDelete("{id}")]
-    public async Task DeleteAsync(string id)
-    {
-        _auditer.AuditCover(id, "DELETE");
-        var cover = await _claimsContext.Covers.Where(cover => cover.Id == id).SingleOrDefaultAsync();
-        if (cover is not null)
+        /// <summary>
+        /// Computes the premium for a cover based on its dates and type.
+        /// </summary>
+        [HttpPost("compute")]
+        [ProducesResponseType(typeof(decimal), StatusCodes.Status200OK)]
+        public ActionResult<decimal> ComputePremium(DateOnly startDate, DateOnly endDate, CoverType coverType)
         {
-            _claimsContext.Covers.Remove(cover);
-            await _claimsContext.SaveChangesAsync();
-        }
-    }
+            var premium = coverService.ComputePremium(startDate, endDate, coverType);
 
-    private decimal ComputePremium(DateTime startDate, DateTime endDate, CoverType coverType)
-    {
-        var multiplier = 1.3m;
-        if (coverType == CoverType.Yacht)
-        {
-            multiplier = 1.1m;
+            return Ok(premium);
         }
 
-        if (coverType == CoverType.PassengerShip)
+        /// <summary>
+        /// Retrieves all covers.
+        /// </summary>
+        [HttpGet("get")]
+        [ProducesResponseType(typeof(IReadOnlyList<CoverDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<IReadOnlyList<CoverDto>>> GetAsync(CancellationToken cancellationToken)
         {
-            multiplier = 1.2m;
+            var covers = await coverService.GetAllAsync(cancellationToken);
+
+            return Ok(covers);
         }
 
-        if (coverType == CoverType.Tanker)
+        /// <summary>
+        /// Retrieves a cover by its identifier.
+        /// </summary>
+        [HttpGet("get/{id}")]
+        [ProducesResponseType(typeof(CoverDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<CoverDto>> GetAsync(string id, CancellationToken cancellationToken)
         {
-            multiplier = 1.5m;
+            var cover = await coverService.GetByIdAsync(id, cancellationToken);
+
+            if (cover is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(cover);
         }
 
-        var premiumPerDay = 1250 * multiplier;
-        var insuranceLength = (endDate - startDate).TotalDays;
-        var totalPremium = 0m;
-
-        for (var i = 0; i < insuranceLength; i++)
+        /// <summary>
+        /// Creates a cover and calculates its premium.
+        /// </summary>
+        [HttpPost("create")]
+        [ProducesResponseType(typeof(CoverDto), StatusCodes.Status201Created)]
+        public async Task<ActionResult<CoverDto>> CreateAsync([FromBody] CoverDto cover, CancellationToken cancellationToken)
         {
-            if (i < 30) totalPremium += premiumPerDay;
-            if (i < 180 && coverType == CoverType.Yacht) totalPremium += premiumPerDay - premiumPerDay * 0.05m;
-            else if (i < 180) totalPremium += premiumPerDay - premiumPerDay * 0.02m;
-            if (i < 365 && coverType != CoverType.Yacht) totalPremium += premiumPerDay - premiumPerDay * 0.03m;
-            else if (i < 365) totalPremium += premiumPerDay - premiumPerDay * 0.08m;
+            var createdCover = await coverService.CreateAsync(cover, cancellationToken);
+
+            return Ok(createdCover);
         }
 
-        return totalPremium;
+        /// <summary>
+        /// Deletes a cover by its identifier.
+        /// </summary>
+        [HttpDelete("delete/{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> DeleteAsync(string id, CancellationToken cancellationToken)
+        {
+            var deleted = await coverService.DeleteAsync(id, cancellationToken);
+
+            if (!deleted)
+            {
+                return NotFound();
+            }
+
+            return NoContent();
+        }
     }
 }

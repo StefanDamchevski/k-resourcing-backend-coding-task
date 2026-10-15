@@ -1,4 +1,4 @@
-﻿namespace Claims.Auditing
+﻿namespace Claims.Domain.Entities
 {
     public class ClaimAudit
     {

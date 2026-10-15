@@ -1,99 +1,67 @@
-using Claims.Auditing;
+using Claims.Application.Dto;
+using Claims.Application.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using MongoDB.EntityFrameworkCore.Extensions;
-
 
 namespace Claims.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class ClaimsController : ControllerBase
+    public sealed class ClaimsController(IClaimService claimService) : ControllerBase
     {
-        private readonly ILogger<ClaimsController> _logger;
-        private readonly ClaimsContext _claimsContext;
-        private readonly Auditer _auditer;
-
-        public ClaimsController(ILogger<ClaimsController> logger, ClaimsContext claimsContext, AuditContext auditContext)
+        /// <summary>
+        /// Retrieves all claims.
+        /// </summary>
+        [HttpGet("get")]
+        [ProducesResponseType(typeof(IReadOnlyList<ClaimDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<IReadOnlyList<ClaimDto>>> GetAsync(CancellationToken cancellationToken)
         {
-            _logger = logger;
-            _claimsContext = claimsContext;
-            _auditer = new Auditer(auditContext);
+            var claims = await claimService.GetAllAsync(cancellationToken);
+
+            return Ok(claims);
         }
 
-        [HttpGet]
-        public async Task<IEnumerable<Claim>> GetAsync()
+        /// <summary>
+        /// Retrieves a claim by its identifier.
+        /// </summary>
+        [HttpGet("get/{id}")]
+        [ProducesResponseType(typeof(ClaimDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ClaimDto>> GetAsync(string id, CancellationToken cancellationToken)
         {
-            return await _claimsContext.GetClaimsAsync();
-        }
+            var claim = await claimService.GetByIdAsync(id, cancellationToken);
 
-        [HttpPost]
-        public async Task<ActionResult> CreateAsync(Claim claim)
-        {
-            claim.Id = Guid.NewGuid().ToString();
-            await _claimsContext.AddItemAsync(claim);
-            _auditer.AuditClaim(claim.Id, "POST");
+            if (claim is null)
+                return NotFound();
+
             return Ok(claim);
         }
 
-        [HttpDelete("{id}")]
-        public async Task DeleteAsync(string id)
+        /// <summary>
+        /// Creates a claim.
+        /// </summary>
+        [HttpPost("create")]
+        [ProducesResponseType(typeof(ClaimDto), StatusCodes.Status201Created)]
+        public async Task<ActionResult<ClaimDto>> CreateAsync([FromBody] ClaimDto claim, CancellationToken cancellationToken)
         {
-            _auditer.AuditClaim(id, "DELETE");
-            await _claimsContext.DeleteItemAsync(id);
+            var created = await claimService.CreateAsync(claim, cancellationToken);
+
+            return Ok(created);
         }
 
-        [HttpGet("{id}")]
-        public async Task<Claim> GetAsync(string id)
+        /// <summary>
+        /// Deletes a claim by its identifier.
+        /// </summary>
+        [HttpDelete("delete/{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> DeleteAsync(string id, CancellationToken cancellationToken)
         {
-            return await _claimsContext.GetClaimAsync(id);
-        }
-    }
+            var deleted = await claimService.DeleteAsync(id, cancellationToken);
 
-    public class ClaimsContext : DbContext
-    {
+            if (!deleted)
+                return NotFound();
 
-        private DbSet<Claim> Claims { get; init; }
-        public DbSet<Cover>  Covers { get; init; }
-
-        public ClaimsContext(DbContextOptions options)
-            : base(options)
-        {
-        }
-
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
-            modelBuilder.Entity<Claim>().ToCollection("claims");
-            modelBuilder.Entity<Cover>().ToCollection("covers");
-        }
-
-        public async Task<IEnumerable<Claim>> GetClaimsAsync()
-        {
-            return await Claims.ToListAsync();
-        }
-
-        public async Task<Claim> GetClaimAsync(string id)
-        {
-            return await Claims
-                .Where(claim => claim.Id == id)
-                .SingleOrDefaultAsync();
-        }
-
-        public async Task AddItemAsync(Claim item)
-        {
-            Claims.Add(item);
-            await SaveChangesAsync();
-        }
-
-        public async Task DeleteItemAsync(string id)
-        {
-            var claim = await GetClaimAsync(id);
-            if (claim is not null)
-            {
-                Claims.Remove(claim);
-                await SaveChangesAsync();
-            }
+            return NoContent();
         }
     }
 }

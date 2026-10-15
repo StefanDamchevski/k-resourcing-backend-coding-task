@@ -1,7 +1,8 @@
-﻿using System.Text.Json.Serialization;
+﻿using Claims.Domain.Enums;
 using MongoDB.Bson.Serialization.Attributes;
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
 
-namespace Claims
+namespace Claims.Domain.Entities
 {
     public class Claim
     {
@@ -12,8 +13,7 @@ namespace Claims
         public string CoverId { get; set; }
 
         [BsonElement("created")]
-        [BsonDateTimeOptions(DateOnly = true)]
-        public DateTime Created { get; set; }
+        public DateOnly Created { get; set; }
 
         [BsonElement("name")]
         public string Name { get; set; }
@@ -23,13 +23,5 @@ namespace Claims
 
         [BsonElement("damageCost")]
         public decimal DamageCost { get; set; }
-    }
-
-    public enum ClaimType
-    {
-        Collision = 0,
-        Grounding = 1,
-        BadWeather = 2,
-        Fire = 3
     }
 }
